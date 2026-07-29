@@ -1,0 +1,22 @@
+# Master Build Checklist
+
+- [ ] Docker + Neo4j running, verified via browser UI at localhost:7474
+- [ ] Python environment with all dependencies installed
+- [ ] Gemini API key configured and tested with a trivial call
+- [ ] arXiv corpus of 15-30 papers on one coherent subfield downloaded
+- [ ] PDF parsing + chunking pipeline working standalone, tested on one paper
+- [ ] Extraction schema (nodes + relationships) finalized and documented
+- [ ] `LLMGraphTransformer` extracting triplets from one test paper, manually verified in Neo4j browser
+- [ ] Entity normalization + `MERGE`-based insertion implemented
+- [ ] Full corpus ingested; graph visually inspected for connectivity
+- [ ] Hand-written, verified Cypher for lineage, contradiction, and gap queries
+- [ ] `GraphCypherQAChain` wired up with few-shot examples for free-form questions
+- [ ] Retry-on-error handling for Cypher generation failures
+- [ ] Grounded synthesis prompt implemented and tested for "not found" cases
+- [ ] FastAPI `/upload` endpoint with background-task ingestion
+- [ ] FastAPI `/query` endpoint returning both answer and subgraph
+- [ ] Next.js upload page with progress/summary display
+- [ ] Next.js chat page
+- [ ] Graph visualizer component rendering returned subgraphs
+- [ ] Basic security hardening: read-only query connection, Cypher write-clause validation, server-side API key
+- [ ] Hand-verified fallback question set for live demos

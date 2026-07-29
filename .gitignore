@@ -1,0 +1,24 @@
+# Environment variables
+.env
+.env.local
+*.env
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+build/
+
+# Downloaded PDF papers corpus
+papers/
+
+# Logs & temp
+*.log
+.DS_Store
+
