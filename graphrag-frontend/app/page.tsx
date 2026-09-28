@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { getApiBaseUrl } from './config';
 import UploadInterface from './components/UploadInterface';
 import ChatInterface from './components/ChatInterface';
 import GraphVisualizer from './components/GraphVisualizer';
@@ -10,6 +11,7 @@ import HeadlineFeatures from './components/HeadlineFeatures';
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'chat' | 'upload' | 'headline'>('chat');
   const [subgraph, setSubgraph] = useState<any[]>([]);
+  const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
   const [dbStats, setDbStats] = useState<{ node_count: number; relationship_count: number }>({
     node_count: 0,
     relationship_count: 0,
@@ -17,10 +19,12 @@ export default function Home() {
 
   const fetchStats = async () => {
     try {
-      const res = await axios.get('http://localhost:8000/graph/summary');
+      const apiBase = getApiBaseUrl();
+      const res = await axios.get(`${apiBase}/graph/summary`, { timeout: 3000 });
       setDbStats(res.data);
+      setBackendOnline(true);
     } catch (err) {
-      console.log('Backend not reachable yet.');
+      setBackendOnline(false);
     }
   };
 
@@ -44,10 +48,29 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Database Stats Pill */}
+        {/* Database Stats & Backend Connectivity Pill */}
         <div className="flex items-center gap-4 bg-slate-900 border border-slate-800 rounded-full px-4 py-1.5 text-xs font-mono">
           <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span
+              className={`w-2 h-2 rounded-full ${
+                backendOnline === true
+                  ? 'bg-emerald-400 animate-pulse'
+                  : backendOnline === false
+                  ? 'bg-rose-500'
+                  : 'bg-amber-400'
+              }`}
+            />
+            <span className="text-slate-400">Backend:</span>
+            <span
+              className={`font-semibold ${
+                backendOnline === true ? 'text-emerald-400' : 'text-rose-400'
+              }`}
+            >
+              {backendOnline === true ? 'Online' : backendOnline === false ? 'Offline (Run main.py)' : 'Checking...'}
+            </span>
+          </div>
+          <div className="w-px h-3 bg-slate-800" />
+          <div className="flex items-center gap-1.5">
             <span className="text-slate-400">Nodes:</span>
             <span className="text-emerald-400 font-semibold">{dbStats.node_count}</span>
           </div>

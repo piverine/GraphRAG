@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import axios from 'axios';
+import { getApiBaseUrl } from '../config';
 
 interface HeadlineFeaturesProps {
   onSubgraphUpdate?: (subgraph: any[]) => void;
@@ -16,7 +17,8 @@ export default function HeadlineFeatures({ onSubgraphUpdate }: HeadlineFeaturesP
   const runLineage = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`http://localhost:8000/headline/lineage?alg_id=${encodeURIComponent(algorithm)}`);
+      const apiBase = getApiBaseUrl();
+      const res = await axios.get(`${apiBase}/headline/lineage?alg_id=${encodeURIComponent(algorithm)}`, { timeout: 30000 });
       setData(res.data);
     } catch (err: any) {
       setData({ error: err.message });
@@ -28,7 +30,8 @@ export default function HeadlineFeatures({ onSubgraphUpdate }: HeadlineFeaturesP
   const runContradictions = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('http://localhost:8000/headline/contradictions');
+      const apiBase = getApiBaseUrl();
+      const res = await axios.get(`${apiBase}/headline/contradictions`, { timeout: 30000 });
       setData(res.data);
     } catch (err: any) {
       setData({ error: err.message });
@@ -40,7 +43,8 @@ export default function HeadlineFeatures({ onSubgraphUpdate }: HeadlineFeaturesP
   const runGaps = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('http://localhost:8000/headline/gaps');
+      const apiBase = getApiBaseUrl();
+      const res = await axios.get(`${apiBase}/headline/gaps`, { timeout: 30000 });
       setData(res.data);
     } catch (err: any) {
       setData({ error: err.message });

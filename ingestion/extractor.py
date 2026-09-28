@@ -1,5 +1,6 @@
 import os
 import re
+import time
 from typing import List
 from dotenv import load_dotenv
 from langchain_core.documents import Document
@@ -15,14 +16,23 @@ ALLOWED_NODES = ["Researcher", "Algorithm", "Dataset", "Metric", "Concept"]
 ALLOWED_RELATIONSHIPS = ["DEVELOPED", "EVALUATED_ON", "IMPROVES", "CONTRADICTS"]
 
 def get_llm():
+    groq_api_key = os.getenv("GROQ_API_KEY")
+    if groq_api_key and groq_api_key != "your_groq_api_key_here":
+        from langchain_groq import ChatGroq
+        model = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+        return ChatGroq(
+            model=model,
+            temperature=0,
+            groq_api_key=groq_api_key
+        )
+        
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key or api_key == "your_gemini_api_key_here":
         raise ValueError(
-            "GOOGLE_API_KEY environment variable is missing or default. "
-            "Please set a valid Gemini API key in your .env file."
+            "Neither GROQ_API_KEY nor GOOGLE_API_KEY is configured in your .env file."
         )
     return ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
+        model="gemini-2.5-flash-lite",
         temperature=0,
         google_api_key=api_key
     )
@@ -39,9 +49,7 @@ def normalize_entity_id(entity_id: str, label: str) -> str:
     
     if label == "Algorithm":
         # Keep standard acronyms uppercase, e.g., BERT, GPT-3, RoBERTa
-        # Remove trailing periods
         cleaned = cleaned.rstrip(".")
-        # Standardize common variations
         if re.match(r"^gpt[\s\-]?3$", cleaned, re.IGNORECASE):
             return "GPT-3"
         if re.match(r"^gpt[\s\-]?4$", cleaned, re.IGNORECASE):
@@ -84,8 +92,11 @@ def normalize_graph_documents(graph_docs: List[GraphDocument]) -> List[GraphDocu
             
     return graph_docs
 
-def extract_graph_from_chunks(chunks: List[Document]) -> List[GraphDocument]:
-    """Extracts entities and relationships from chunks using Gemini 2.5 Flash."""
+def extract_graph_from_chunks(chunks: List[Document], rate_limit_delay: float = 5.5) -> List[GraphDocument]:
+    """
+    Extracts entities and relationships from chunks using Gemini with
+    rate-limiting delay and exponential backoff retry for HTTP 429 quota errors.
+    """
     llm = get_llm()
     transformer = LLMGraphTransformer(
         llm=llm,
@@ -94,19 +105,74 @@ def extract_graph_from_chunks(chunks: List[Document]) -> List[GraphDocument]:
         node_properties=["description"],
     )
     
-    graph_docs = transformer.convert_to_graph_documents(chunks)
-    normalized_docs = normalize_graph_documents(graph_docs)
+    all_graph_docs = []
+    total_chunks = len(chunks)
+    
+    for idx, chunk in enumerate(chunks):
+        max_retries = 5
+        success = False
+        
+        for attempt in range(max_retries):
+            try:
+                single_docs = transformer.convert_to_graph_documents([chunk])
+                all_graph_docs.extend(single_docs)
+                success = True
+                break
+            except Exception as e:
+                err_str = str(e)
+                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "Quota exceeded" in err_str:
+                    wait_time = 30.0 + (attempt * 15)
+                    print(f"  ⚠️ [Rate Limit 429] Quota exceeded on chunk {idx+1}/{total_chunks}. Pausing {wait_time}s before retry (attempt {attempt+1}/{max_retries})...")
+                    time.sleep(wait_time)
+                else:
+                    print(f"  ⚠️ [Error] Unhandled error on chunk {idx+1}/{total_chunks}: {e}")
+                    break
+        
+        # Polite delay between chunks to respect API RPM limit (15 requests/min)
+        if success and rate_limit_delay > 0 and idx < total_chunks - 1:
+            time.sleep(rate_limit_delay)
+            
+    normalized_docs = normalize_graph_documents(all_graph_docs)
     return normalized_docs
+
+def save_graph_documents_to_neo4j(graph_docs: List[GraphDocument]) -> int:
+    """Directly persists GraphDocuments to Neo4j via MERGE without requiring APOC procedures."""
+    if not graph_docs:
+        return 0
+    graph = get_neo4j_graph(refresh_schema=False)
+    total_nodes = 0
+    
+    for gd in graph_docs:
+        paper_id = gd.source.metadata.get("paper_id") or gd.source.metadata.get("source_file") or "unknown"
+        graph.query("MERGE (d:Document {id: $doc_id})", params={"doc_id": paper_id})
+        
+        for n in gd.nodes:
+            label = n.type if n.type in ALLOWED_NODES else "Concept"
+            graph.query(
+                f"MERGE (n:{label} {{id: $id}}) MERGE (d:Document {{id: $doc_id}}) MERGE (n)-[:MENTIONED_IN]->(d)",
+                params={"id": str(n.id), "doc_id": paper_id}
+            )
+            total_nodes += 1
+            
+        for r in gd.relationships:
+            s_label = r.source.type if r.source.type in ALLOWED_NODES else "Concept"
+            t_label = r.target.type if r.target.type in ALLOWED_NODES else "Concept"
+            rel_type = r.type if r.type in ALLOWED_RELATIONSHIPS else "IMPROVES"
+            graph.query(
+                f"""
+                MATCH (s:{s_label} {{id: $s_id}})
+                MATCH (t:{t_label} {{id: $t_id}})
+                MERGE (s)-[:{rel_type}]->(t)
+                """,
+                params={"s_id": str(r.source.id), "t_id": str(r.target.id)}
+            )
+            
+    return total_nodes
 
 def ingest_paper_to_neo4j(chunks: List[Document]):
     """Extracts graph documents and saves them to Neo4j with source provenance."""
+    if not chunks:
+        return 0
     graph_docs = extract_graph_from_chunks(chunks)
-    graph = get_neo4j_graph(refresh_schema=False)
-    
-    # Store with include_source=True to bind metadata provenance
-    graph.add_graph_documents(
-        graph_docs,
-        baseEntityLabel=True,
-        include_source=True
-    )
-    return len(graph_docs)
+    nodes_saved = save_graph_documents_to_neo4j(graph_docs)
+    return nodes_saved

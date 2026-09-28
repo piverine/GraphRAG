@@ -94,6 +94,7 @@ def query_graph(payload: QueryRequest):
         raise HTTPException(status_code=400, detail="Question must not be empty.")
         
     result = query_knowledge_graph(payload.question)
+    result["subgraph"] = result.get("intermediate_steps", [])
     return result
 
 @app.get("/headline/lineage")

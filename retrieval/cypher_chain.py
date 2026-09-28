@@ -33,13 +33,13 @@ Relationship Types:
 
 Examples:
 Question: Which algorithms improve on BERT?
-Cypher: MATCH (a:Algorithm)-[:IMPROVES]->(b:Algorithm {id: 'BERT'}) RETURN a.id AS Algorithm
+Cypher: MATCH (a:Algorithm)-[:IMPROVES]->(b:Algorithm {{id: 'BERT'}}) RETURN a.id AS Algorithm
 
 Question: What algorithms did Vaswani develop?
 Cypher: MATCH (r:Researcher)-[:DEVELOPED]->(a:Algorithm) WHERE toLower(r.id) CONTAINS 'vaswani' RETURN a.id AS Algorithm
 
 Question: What datasets was FlashAttention evaluated on?
-Cypher: MATCH (a:Algorithm {id: 'FlashAttention'})-[:EVALUATED_ON]->(d:Dataset) RETURN d.id AS Dataset
+Cypher: MATCH (a:Algorithm {{id: 'FlashAttention'}})-[:EVALUATED_ON]->(d:Dataset) RETURN d.id AS Dataset
 
 Question: Which studies or algorithms contradict each other?
 Cypher: MATCH (a)-[:CONTRADICTS]-(b) RETURN a.id AS EntityA, b.id AS EntityB
@@ -56,14 +56,15 @@ CYPHER_PROMPT = PromptTemplate(
 )
 
 SYNTHESIS_TEMPLATE = """
-You are an academic literature assistant answering a user question based ONLY on the graph facts provided below.
-Do not use outside knowledge. If the provided graph facts do not contain sufficient information to answer the question, explicitly state: "The ingested knowledge graph does not contain sufficient information to answer this question."
+You are an academic literature assistant answering a user question based on the retrieved graph database facts below.
+Do not use outside knowledge.
+If the graph facts do not contain the answer, state: "The ingested knowledge graph does not contain sufficient information to answer this question."
 
 Graph facts:
 {context}
 
 Question: {question}
-Answer (with inline citations/provenance where facts are present):
+Answer directly and concisely:
 """
 
 SYNTHESIS_PROMPT = PromptTemplate(
@@ -72,15 +73,25 @@ SYNTHESIS_PROMPT = PromptTemplate(
 )
 
 def get_cypher_qa_chain():
-    api_key = os.getenv("GOOGLE_API_KEY")
-    if not api_key or api_key == "your_gemini_api_key_here":
-        raise ValueError("GOOGLE_API_KEY is not set in .env file.")
-        
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
-        temperature=0,
-        google_api_key=api_key
-    )
+    groq_api_key = os.getenv("GROQ_API_KEY")
+    if groq_api_key and groq_api_key != "your_groq_api_key_here":
+        from langchain_groq import ChatGroq
+        model = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+        llm = ChatGroq(
+            model=model,
+            temperature=0,
+            groq_api_key=groq_api_key
+        )
+    else:
+        api_key = os.getenv("GOOGLE_API_KEY")
+        if not api_key or api_key == "your_gemini_api_key_here":
+            raise ValueError("Neither GROQ_API_KEY nor GOOGLE_API_KEY is configured in your .env file.")
+            
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash-lite",
+            temperature=0,
+            google_api_key=api_key
+        )
     
     graph = get_neo4j_graph(refresh_schema=False)
     
@@ -116,4 +127,7 @@ def query_knowledge_graph(question: str, max_attempts: int = 2) -> Dict[str, Any
                     "answer": f"Unable to execute graph query: {str(e)}",
                     "intermediate_steps": []
                 }
+            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e) or "rate" in str(e).lower():
+                import time
+                time.sleep(5)
             current_question = f"{question}\n(Note: previous query failed with: {e}. Generate valid Cypher.)"

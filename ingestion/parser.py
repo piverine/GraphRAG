@@ -6,8 +6,8 @@ from langchain_core.documents import Document
 
 def parse_and_chunk_pdf(
     pdf_path: str,
-    chunk_size: int = 1500,
-    chunk_overlap: int = 200
+    chunk_size: int = 12000,
+    chunk_overlap: int = 800
 ) -> List[Document]:
     """
     Parses a research paper PDF and splits it into structured text chunks

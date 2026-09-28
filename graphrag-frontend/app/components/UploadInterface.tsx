@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import axios from 'axios';
+import { getApiBaseUrl } from '../config';
 
 interface UploadInterfaceProps {
   onIngestComplete?: () => void;
@@ -31,8 +32,10 @@ export default function UploadInterface({ onIngestComplete }: UploadInterfacePro
     formData.append('file', file);
 
     try {
-      const res = await axios.post('http://localhost:8000/upload', formData, {
+      const apiBase = getApiBaseUrl();
+      const res = await axios.post(`${apiBase}/upload`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 60000,
       });
       setStatusMsg(`✅ ${res.data.message}`);
       setFile(null);
